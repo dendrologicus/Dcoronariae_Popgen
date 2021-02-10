@@ -1,0 +1,489 @@
+---
+title: "M. coronaria population genetic study EU, ASIA & US (CABI submission)"
+author: "Lukas Wille"
+date: "`r format(Sys.Date(), '%D')`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(scipen=999)
+```
+
+```{r setup 2, echo=FALSE, error=TRUE}
+# set working directory
+setwd("~/ownCloud/FiblWulche/Dataanalysis/MarsoninaTho") #MAC
+
+
+### load libraries
+
+library(tidyr)
+library(ggplot2)
+library(poppr)
+library(hierfstat)
+library(vegan)
+library(adegenet)
+library(StAMPP)
+library(magrittr)
+library(dplyr)
+library(treemap)
+library(mmod)
+library(ape)
+```
+
+
+
+```{r Load data, echo=FALSE}
+MCpop_all <- read.genalex("Mc_20200126_all.csv", ploidy = 1, genclone=T, geo=F)   # no Geoinfo, therefore geo=F
+
+```
+
+```{r Prep data}
+# subset to continents
+MCpop_EU <- popsub(MCpop_all, c("EU_GEN", "EU_RIC", "EU_HES", "EU_KOB"))  # for this I could also use "setPop"
+MCpop_SWISS <- popsub(MCpop_all, c("EU_RIC", "EU_HES", "EU_KOB"))  # for this I could also use "setPop"
+
+# add Population strata  (i.e. read it out and save it as meta info)
+splitStrata(MCpop_all) <- ~Continent/Population   # define meaningful regions
+nameStrata(MCpop_all)
+strata(MCpop_all) %>% group_by(Continent, Population) %>% summarize(Count = n())
+
+splitStrata(MCpop_EU) <- ~Continent/Population
+nameStrata(MCpop_EU)
+strata(MCpop_EU) %>% group_by(Continent, Population) %>% summarize(Count = n())
+
+# Further subset to pops
+MCpop_EUGEN <- popsub(MCpop_all, "EU_GEN")
+MCpop_EUHES <- popsub(MCpop_all, "EU_HES")
+MCpop_EURIC <- popsub(MCpop_all, "EU_RIC")
+MCpop_EUKOB <- popsub(MCpop_all, "EU_KOB")
+MCpop_AS <- popsub(MCpop_all, "ASIA_AS")
+MCpop_US <- popsub(MCpop_all, "USA_US")
+
+MCpop_OUT <- popsub(MCpop_all, c("ASIA_AS", "USA_US"))
+
+
+```
+
+```{r data clone corrected}
+# Clonal correction - here the dataset is censored such that only one individual per MLG is represented per population
+MCpop_all_cloncorr <- clonecorrect(MCpop_all, strata = ~Continent/Population,  keep = 1:2)
+MCpop_EU_cloncorr <- clonecorrect(MCpop_EU, strata = ~Continent/Population,  keep = 1:2)
+
+# -> when we compare clone-un-corrected to corrected data then we see that in the corrected data diversity per locus increases.
+
+```
+
+## Locus information
+
+### Allelic frequencies and PIC (polymorphic information content)
+
+```{r PIC}
+
+MCpop_all_alfreq <- as.data.frame(adegenet::makefreq(adegenet::genind2genpop(MCpop_all), missing=0))  # use to calculate allel frequencies
+#write.csv(MCpop_all_alfreq, file="MCpop_EU_alfreq.csv")
+MCpop_all_alfreq["USA_US", "FAM62.240"] <- 1   # FAM62 has no alleles in the USA sample; so for the PIC calculations I have to set one allele to one, because PIC wants that the allel freqs sum up to one.
+MCpop_all_alfreq["USA_US", "HEX09.168"] <- 1 # dito
+
+Genomes <- c(182,20,53,58,7,1)  # size of the populations
+MCpop_all_alfreq <- tibble::add_column(MCpop_all_alfreq, Genomes, .after = 0)
+
+MCpop_all_PIC <- polysat::PIC(MCpop_all_alfreq)
+#write.csv(MCpop_all_PIC, file="MCpop_all_PIC.csv")
+
+```
+
+
+#### MLG accumulation curves --> for Supp. Fig. 1 in the manuscript
+
+```{r data summary}
+
+# Diversity
+(Locustab_MCpop_all <- locus_table(MCpop_all))
+(Locustab_MCpop_EU <- locus_table(MCpop_EU))
+
+(Locustab_MCpop_all_cloncorr <- locus_table(MCpop_all_cloncorr))
+(Locustab_MCpop_EU_cloncorr <- locus_table(MCpop_EU_cloncorr))
+
+### Rarefaction analysis of the loci - with nice plots
+# pop all
+gac_all <- genotype_curve(MCpop_all, sample = 1000, quiet = TRUE, thresh = NULL)  # do not print a hline at the max. no. of MLG possible
+rareP_all <- last_plot() +
+  scale_y_continuous(breaks=c(0,10,20,30,38), limits=c(0,40)) +
+  theme_bw() +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  xlab("Number of SSR markers") +
+  ylab("Number of MLG observed") +
+  geom_hline(yintercept=38, linetype="dashed") + # now manually draw that max. line
+  ggtitle("A")
+
+# pop EU
+gac_EU <- genotype_curve(MCpop_EU, sample = 1000, quiet = TRUE, thresh = NULL)
+rareP_EU <- last_plot() +
+scale_y_continuous(breaks=c(31), limits=c(0,40)) +
+  theme_bw() +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  xlab("Number of SSR markers") +
+  ylab(NULL) +
+  geom_hline(yintercept=31, linetype="dashed") +
+  ggtitle("B")
+
+# plot together & save
+cowplot::plot_grid(rareP_all, rareP_EU, rel_widths = c(1,0.6))
+#ggsave("MC_rarefactioncurve.tiff", units="cm", width=17, height=7, dpi=300, compression="lzw")  # CABI Fig width is 17cm full page, 8.5cm half page
+
+# Missing marker info per population
+(info_table(MCpop_all, type = "missing", plot = FALSE))
+```
+
+#### Multi-locus genotypes - MLGs --> for Fig 2. in the manuscript
+
+```{r MLGS, echo=FALSE}
+### Multilocus Genotypes ###
+
+Mcpop_all_MLG <- mlg.table(MCpop_all, plot = FALSE)   # Bar graphs of MLGs in sub-pops (Fig. 2 in Manuscript)
+mlg.id(MCpop_all) # List all MLGs and show which Pops do have this MLG
+
+# make nice ggplot with the MLG overview
+N_EUgen <- sum(Mcpop_all_MLG[1,])
+N_EUhes <- sum(Mcpop_all_MLG[2,])
+N_EUric <- sum(Mcpop_all_MLG[3,])
+N_EUkob <- sum(Mcpop_all_MLG[4,])
+N_AS <- sum(Mcpop_all_MLG[5,])
+N_US <- sum(Mcpop_all_MLG[6,])
+
+MLG.DF <- as.data.frame(Mcpop_all_MLG)
+MLG.DF <- tibble::rownames_to_column(MLG.DF, "population")
+MLG.DF.long <- tidyr::gather(MLG.DF, MLG, count, MLG.1:MLG.38)
+
+MLG.DF.long$MLG <- factor(MLG.DF.long$MLG, levels = c("MLG.1", "MLG.2", "MLG.3", "MLG.4", "MLG.5", "MLG.6", "MLG.7", "MLG.8", "MLG.9", "MLG.10",
+                                                      "MLG.11", "MLG.12", "MLG.13", "MLG.14", "MLG.15", "MLG.16", "MLG.17", "MLG.18", "MLG.19", "MLG.20",
+                                                      "MLG.21", "MLG.22", "MLG.23", "MLG.24", "MLG.25", "MLG.26", "MLG.27", "MLG.28", "MLG.29", "MLG.30",
+                                                      "MLG.31", "MLG.32", "MLG.33", "MLG.34", "MLG.35", "MLG.36", "MLG.37", "MLG.38"))
+MLG.DF.long$population <- factor(MLG.DF.long$population, levels = c("ASIA_AS", "USA_US", "EU_GEN", "EU_HES", "EU_KOB", "EU_RIC"))
+MLG.DF.long$population <- plyr::revalue(MLG.DF.long$population, c("ASIA_AS"="ASIA", "USA_US"="USA"))
+
+#MLG.DF.long$count[MLG.DF.long$count == 1] <- 1.1   # I add a little bit so the 1's are also plotted... 
+
+# New facet label names for supp variable
+pop.labs <- c("ASIA\n (n=7)", "USA\n (n=3)", "EU_GEN\n (n=182)", "EU_HES\n (n=20)", "EU_KOB\n (n=53)", "EU_RIC\n (n=58)")
+names(pop.labs) <- c("ASIA", "USA", "EU_GEN", "EU_HES", "EU_KOB", "EU_RIC")
+
+ggplot(MLG.DF.long[which(MLG.DF.long$count>0),], aes(x=MLG, y=count)) +
+  geom_bar(stat = "identity", fill="black") +
+  #scale_y_log10() +
+  #scale_x_discrete(labels=c("MLG.1", "", "", "", "", "", "", "", "", "MLG.10", "", "", "", "", "", "", "", "", "", "MLG.20",
+                          #  "", "", "", "", "", "", "", "", "", "MLG.30","", "", "", "", "", "", "", "MLG.38")) +
+  facet_wrap(~population, nrow = 1, labeller = labeller(population = pop.labs)) +
+  theme_bw() +
+  theme(axis.title.y = element_blank(),
+        axis.text.y = element_text(size=7.5),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        strip.background = element_blank()) +
+  coord_flip()
+
+#ggsave("MLGs_world_170x85_300dpi.tiff", units="cm", width=17, height=11, dpi=300, compression = 'lzw')    # I save only once.
+  
+```
+
+
+```{r MLG rarefaction curve}
+# not included in the manuscript
+#rarecurve(pop.mlg, step = 1, sample, xlab = "Sample Size", ylab = "expected MLGs",
+# label = TRUE, col, lty, ...)
+rarecurve(Mcpop_all_MLG, step = 1, xlab = "Sample Size", ylab = "observed MLGs",
+          label = TRUE)
+```
+
+
+## Genetic diversity etc.
+
+```{r genetic diversity}
+
+Popall <- poppr(MCpop_all)
+
+PopEU <- poppr(MCpop_EU)
+PopEUoverall <- PopEU[5,]  # to calculate the EU overall.
+
+PopAS <- poppr(MCpop_AS)
+PopUS <- poppr(MCpop_US)
+
+
+Pop_div_overview <- rbind(Popall[1:4,], PopEUoverall, Popall[5:7,])[-13]
+Pop_div_overview[5,1] <- "Tot_EU"
+Pop_div_overview[8,1] <- "Tot_World"
+row.names(Pop_div_overview) <- Pop_div_overview$Pop
+Pop_div_overview <- Pop_div_overview[-1]
+```
+
+## Allelic diversity (locus info)  --> Table 2 in manuscript
+
+```{r allel div}
+### Allel diversity (i.e. locus Info) 
+cc <- locus_table(MCpop_all_cloncorr, info = FALSE) # 1. Calculate diversity of the clone corrected data
+mp <- locus_table(MCpop_all, info = FALSE) # 2. Calculate diversity of the uncorrected data
+mp - cc # 3. Take the difference of step 1 from step 2.
+
+
+### Number of private allles per sub-pop
+rowSums(private_alleles(MCpop_all))
+rowSums(private_alleles(MCpop_all_cloncorr))
+rowSums(private_alleles(MCpop_EU))
+```
+
+### Index of association
+```{r IA}
+### index of Association  --> part Tab. 4 in the manuscript
+set.seed(3825)
+
+IA_all <- ia(MCpop_all, sample = 1000, plot=FALSE)
+IA_EUall <- ia(MCpop_EU, sample = 1000, plot=FALSE)
+IA_EUGEN <- ia(MCpop_EUGEN, sample = 1000, plot=FALSE)
+IA_EUHES <- ia(MCpop_EUHES, sample = 1000, plot=FALSE)
+IA_EURIC <- ia(MCpop_EURIC, sample = 1000, plot=FALSE)
+IA_EUKOB <- ia(MCpop_EUKOB, sample = 1000, plot=FALSE)
+IA_AS <- ia(MCpop_AS, sample = 1000, plot=FALSE)
+IA_US <- ia(MCpop_US, sample = 1000, plot=FALSE)
+
+
+IAs <- as.data.frame(rbind(IA_all, IA_EUall, IA_EUGEN, IA_EUHES, IA_EURIC, IA_EUKOB, IA_AS, IA_US))
+#write.csv(IAs, "IndexofAssociations_Subpops.csv")
+
+```
+
+### Index of association (only EU): Linkage desequilibrium --> Supp. Fig. 3 
+
+```{r LD EU}
+
+set.seed(3825)
+
+# LD in EU only
+LD_EU <- ia(MCpop_EU, missing = "zero", sample = 999, valuereturn = TRUE, plot=FALSE) # durch valuereturn=TRUE bekomme ich die resampling Daten in die Liste LD_EU gespeichert, die kann ich dann zum schoen plotten weiterverwenden...
+
+
+# LD in EU only - corrected
+LD_EU_cloncorr<- ia(MCpop_EU_cloncorr, missing = "zero", sample = 999, valuereturn = TRUE, plot=TRUE)
+
+
+
+## Make nicer LD plots for EU samples with ggplot and save it for publication -- Supp. Fig 3.
+#A
+g_I_noncorr <- ggplot(LD_EU$samples) +
+  geom_histogram(aes(x=Ia), color = "white", fill="lightgrey") +
+  scale_y_continuous(breaks = c(0,50,100), limits = c(0,110)) +
+  theme_classic() +
+  geom_vline(xintercept = 0.004, size = 1, color = "black",  linetype="dashed") +
+  labs(tag="",
+       x=expression(italic(I[A])),
+       x=expression("count")) +
+  annotate("text", x = 0.1, y = 95, label = paste("italic(I[d])==", 0.004), parse = TRUE, color="black", size = 10*0.35) +
+  annotate("text", x = 0.1, y = 88, label = paste("italic(P)==", 0.48), parse = TRUE, color="black", size = 10*0.35) +
+  ggtitle("A")
+
+#B
+g_r_noncorr <- ggplot(LD_EU$samples) +
+  geom_histogram(aes(x=rbarD), color = "white", fill="lightgrey") +
+  scale_y_continuous(breaks = c(0,50,100), limits = c(0,110)) +
+  theme_classic() +
+  geom_vline(xintercept = -0.0007, size = 1, color = "black",  linetype="dashed") +
+  labs(tag="",
+       x=expression(italic(bar(r)[d])),
+       x=expression("count")) +
+  annotate("text", x = 0.03, y = 95, label = paste("italic(bar(r)[d])==", 0.0007), parse = TRUE, color="black", size = 10*0.35) +
+  annotate("text", x = 0.03, y = 88, label = paste("italic(P)==", 0.47), parse = TRUE, color="black", size = 10*0.35)+
+  ggtitle("B")
+
+#C
+g_I_clonecorr <- ggplot(LD_EU_cloncorr$samples) +
+  geom_histogram(aes(x=Ia), color = "white", fill="lightgrey") +
+  scale_y_continuous(breaks = c(0,50,100), limits = c(0,110)) +
+  theme_classic() +
+  geom_vline(xintercept = -0.48, size = 1, color = "black",  linetype="dashed") +
+  labs(tag="",
+       x=expression(italic(I[A])),
+       x=expression("count")) +
+  annotate("text", x = 0.2, y = 95, label = paste("italic(I[d])==", -0.48), parse = TRUE, color="black", size = 10*0.35) +
+  annotate("text", x = 0.2, y = 88, label = paste("italic(P)==", 1), parse = TRUE, color="black", size = 10*0.35)+
+  ggtitle("C")
+
+#D
+g_r_clonecorr <- ggplot(LD_EU_cloncorr$samples) +
+  geom_histogram(aes(x=rbarD), color = "white", fill="lightgrey") +
+  scale_y_continuous(breaks = c(0,50,100), limits = c(0,110)) +
+  theme_classic() +
+  geom_vline(xintercept = -0.072, size = 1, color = "black",  linetype="dashed") +
+  labs(tag="",
+       x=expression(italic(bar(r)[d])),
+       x=expression("count")) +
+  annotate("text", x = 0.03, y = 95, label = paste("italic(bar(r)[d])==", -0.07), parse = TRUE, color="black", size = 10*0.35) +
+  annotate("text", x = 0.03, y = 88, label = paste("italic(P)==", 1), parse = TRUE, color="black", size = 10*0.35)+
+  ggtitle("D")
+
+# plot together and save
+cowplot::plot_grid(g_I_noncorr, g_r_noncorr, g_I_clonecorr, g_r_clonecorr, cols = 2)
+#ggsave("LD_Plots_EU_all_170x170_300dpi.tiff", units="cm", width=17, height=17, dpi=300, compression = 'lzw')   
+```
+
+
+#### Minimum spanning network (Bruvo's distance) with MLGs
+
+Here a MSN is plotted that shows each MLG as a circle. The size of the circle is proportional to the isolates sampled having this MLG. The colors represent the populations (reddish, brownish are EU; blueish Asia and US). The greytone of the edges represent the relatedness between the MLGs: The lighter the less related (actually most of the MLGs are very close (Bruvos is really small)). I apply a cutoff of Bruvo dist = 0.5; higher distances are not displayed as an edge. -> That resulats in the cutoff of all As and US MLG, exept for one.
+
+--> Bruvo, R., Michiels, N. K., D'Sousa, T. G., and Schulenberg, H. (2004) A simple method for calculation of microsatellite genotypes irrespective of ploidy level. Molecular Ecology 13, 2101-2106.
+
+
+
+```{r MSN}
+# First, Set up our repeat lengths of the markers
+reps <- c(FAM06=3, HEX36=4, FAM59=3, FAM15=2, HEX60=4, FAM68=3, FAM19=3, HEX32=2, FAM62=4, FAM48=2, HEX09=3, FAM70=4)
+
+# Second, calculate the MSN (the resulting object is an igraph object; at least the $graph in the list)
+#all
+Mc_MSN_all <- bruvo.msn(MCpop_all, replen = reps, showplot = FALSE)
+#EU
+Mc_MSN_EU <- bruvo.msn(MCpop_EU, replen = reps, showplot = FALSE)
+#OUT group
+Mc_MSN_OUT <- bruvo.msn(MCpop_OUT, replen = reps, showplot = FALSE)
+
+# Third, Plot-it
+# NOTE: The plot was manually customized in Microsoft PowerPoint :)
+set.seed(3825)
+tiff(file="MC_all_MSN.tiff", width=30, height=30, units="cm", res=600)
+plot_poppr_msn(MCpop_all, Mc_MSN_all,
+               mlg.compute = contacted,
+               #inds = "none", 
+               layfun = layout_nicely,
+               gadj=4, gweight=1, glim=c(0,0.9), wscale=FALSE,
+               mlg=FALSE,
+               nodebase = 1.5,
+               nodescale = 10, nodelab = 999,
+               #cutoff = 0.5, beforecut = TRUE,
+               size.leg=FALSE,
+               palette=c('#d73027','#fc8d59','#fee090','#993300','#91bfdb','#4575b4'),
+               pop.leg = TRUE,
+               scale.leg = TRUE)
+
+```
+#### Infering population structure using DAPC
+
+In contrast to STRUCTURE-like approaches a DAPC and k-means clusterin do not assume models of panmixie and un-linked loci, so it is more suitable for clonal organisms.
+
+https://grunwaldlab.github.io/Population_Genetics_in_R/DAPC.html
+
+Also check this very nice tutorial:
+https://github.com/thibautjombart/adegenet/blob/master/tutorials/tutorial-dapc.pdf
+
+```{r DAPC}
+# First we check how many PC we retain for the discriminant analysis by doing a cross-validation test. We actaully see that with 5 PC we get the lowest variability of predicting 60% correct
+set.seed(3825)
+MC_x <- xvalDapc(tab(MCpop_all, NA.method = "mean"), pop(MCpop_all))
+
+# then we do the cross validation more specifically with 3 to 15 PCs --> takes about 3mins.
+MC_xX <- xvalDapc(tab(MCpop_all, NA.method = "mean"), pop(MCpop_all),
+                             n.pca = 3:15)
+
+# I redo a cross validation  specifically with 2 to 8 PCs --> takes about 1.5mins. -> I would continue with 6 PCs -> thats also what the xvalDapc algorith suggests (as seen in the object "MC_xX[-1]")
+MC_xX <- xvalDapc(tab(MCpop_all, NA.method = "mean"), pop(MCpop_all),
+                             n.pca = 2:8)
+
+MC_xX[-1]
+
+```
+
+```{r DAPC EU}
+# First we check how many PC we retain for the discriminant analysis by doing a cross-validation test. Here we see that the prediction is much less accurate than wit the world dataset: the prediction rate is as low as 0.4 and shows a large variability. The best is maybe with 14 PCs
+set.seed(3825)
+MC_EU_x <- xvalDapc(tab(MCpop_EU, NA.method = "mean"), pop(MCpop_EU))
+
+# then we do the cross validation more specifically with 7 to 20 PCs --> takes about 3mins.
+MC_EU_xX <- xvalDapc(tab(MCpop_EU, NA.method = "mean"), pop(MCpop_EU),
+                             n.pca = 3:15, n.rep = 1000,
+                             parallel = "snow", ncpus = 4L)
+
+# I redo a cross validation  specifically with 9 to 15 PCs --> takes about 2mins. -> I would continue with 13 PCs -> thats also what the xvalDapc algorith suggests (as seen in the object "MC_EU_xX[-1]")
+MC_EU_xX <- xvalDapc(tab(MCpop_EU, NA.method = "mean"), pop(MCpop_EU),
+                             n.pca = 9:15, n.rep = 1000,
+                             parallel = "snow", ncpus = 4L)
+
+MC_EU_xX[-1]
+
+
+```
+
+
+
+```{r DAPC plot}
+# prep data WORLD
+DAPC_wrld <- MC_xX$DAPC
+my_wr <- as.data.frame(DAPC_wrld$ind.coord)
+my_wr$Group <- DAPC_wrld$grp
+
+# prep data EU
+DAPC_EU <- MC_EU_xX$DAPC
+my_df <- as.data.frame(DAPC_EU$ind.coord)
+my_df$Group <- DAPC_EU$grp
+
+
+# plot WORLD -> becomes inlet
+pWRLD <- ggplot(my_wr, aes(x = LD1, y = LD2, color = Group, fill = Group)) +
+  geom_hline(yintercept = 0, color = "grey66") +
+  geom_vline(xintercept = 0, color = "grey66") +
+  geom_point(size = 2, shape = 21) +
+  theme_bw() +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), axis.title =   element_blank(), plot.margin = unit(c(0,0,0,0), "mm")) +
+  scale_color_manual(values=c(myCol)) +
+  scale_fill_manual(values=c(paste(myCol, "66", sep = ""))) +
+  annotate(geom="text", x=38, y=13, label="No. of LDs saved: 6", size=3) +
+  annotate(geom="text", x=39.5, y=11, label="Var. conserved: 69%", size=3) +
+  guides(col=guide_legend("Populations"), fill=guide_legend("Populations"))
+
+
+
+# plot EU
+pEU <- ggplot(my_df, aes(x = LD1, y = LD2, color = Group, fill = Group)) +
+  geom_hline(yintercept = 0, color = "grey66") +
+  geom_vline(xintercept = 0, color = "grey66") +
+  geom_point(size = 4, shape = 21) +
+  theme_bw() +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), legend.position = "none")+
+  scale_color_manual(values=c(myCol[1:4])) +
+  scale_fill_manual(values=c(paste(myCol[1:4], "66", sep = ""))) +
+  annotate(geom="text", x=2, y=2.2, label="No. of LDs saved: 3") +
+  annotate(geom="text", x=2.08, y=1.7, label="Var. conserved: 93%")
+
+  
+  
+# --> Produce one plot EU with World inset
+thelegend <- ggpubr::get_legend(pWRLD + theme(legend.box.margin = margin(3, 0, 0, 5)))
+
+wrld_grob <- ggplotGrob(pWRLD + theme(legend.position = "none"))
+
+xx <- cowplot::plot_grid(pEU + annotation_custom(grob = wrld_grob, xmin = 0.2, xmax = 3.7, ymin = -9.2, ymax = -2))
+
+wowo <- cowplot::plot_grid(xx, thelegend, rel_widths = c(10,2))
+
+#ggsave("Discriminants_PLots_170x100_300dpi.tiff", wowo, units="cm", width=17, height=10, dpi=300, compression = 'lzw')   
+
+```
+
+### Based on the DAPC we want to visualisise group membership of the isolates.  
+
+In the plots the color red means probability =1, white=0. The blue cross is the original membership of the isolate.
+
+```{r group member}
+# Part 1
+#tiff("DAPC_clusterP1_170x245_300dpi.tiff", width = 17, height = 24.5, units="cm", res=300, compression="lzw")
+assignplot(MC_xX$DAPC, subset=1:160, cex=0.6)
+dev.off()
+
+# Part 2
+#tiff("DAPC_clusterP2_170x245_300dpi.jpg", width = 17, height = 24.5, units="cm", res=300, compression="lzw")
+assignplot(MC_xX$DAPC, subset=161:323, cex=0.6)
+dev.off()
+
+```
+
+
+
+
