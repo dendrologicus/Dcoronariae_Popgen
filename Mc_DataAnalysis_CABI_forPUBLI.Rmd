@@ -1,5 +1,5 @@
 ---
-title: "M. coronaria population genetic study EU, ASIA & US (CABI submission)"
+title: "D. coronariae population genetic study EU, ASIA & US (CABI submission)"
 author: "Lukas Wille"
 date: "`r format(Sys.Date(), '%D')`"
 output: html_document
@@ -38,7 +38,7 @@ MCpop_all <- read.genalex("Mc_20200126_all.csv", ploidy = 1, genclone=T, geo=F) 
 
 ```
 
-```{r Prep data}
+```{r Prep data, echo=FALSE}
 # subset to continents
 MCpop_EU <- popsub(MCpop_all, c("EU_GEN", "EU_RIC", "EU_HES", "EU_KOB"))  # for this I could also use "setPop"
 MCpop_SWISS <- popsub(MCpop_all, c("EU_RIC", "EU_HES", "EU_KOB"))  # for this I could also use "setPop"
@@ -76,9 +76,31 @@ MCpop_EU_cloncorr <- clonecorrect(MCpop_EU, strata = ~Continent/Population,  kee
 
 ## Locus information
 
-### Allelic frequencies and PIC (polymorphic information content)
+### Allel summaries, locus diversity & evenness --> for Table 2 in the manuscript
 
-```{r PIC}
+```{r locus info, echo=FALSE}
+locus_table(MCpop_all)
+```
+
+### Allelic diversity (locus info)  --> Table 2 in manuscript
+
+```{r allel div, echo=FALSE}
+### Allel diversity (i.e. locus Info) 
+cc <- locus_table(MCpop_all_cloncorr, info = FALSE) # 1. Calculate diversity of the clone corrected data
+mp <- locus_table(MCpop_all, info = FALSE) # 2. Calculate diversity of the uncorrected data
+mp - cc # 3. Take the difference of step 1 from step 2.
+
+
+### Number of private allles per sub-pop
+rowSums(private_alleles(MCpop_all))
+rowSums(private_alleles(MCpop_all_cloncorr))
+rowSums(private_alleles(MCpop_EU))
+```
+
+
+### PIC (polymorphic information content) --> for Table 3 in the manuscript
+
+```{r PIC, echo=FALSE}
 
 MCpop_all_alfreq <- as.data.frame(adegenet::makefreq(adegenet::genind2genpop(MCpop_all), missing=0))  # use to calculate allel frequencies
 #write.csv(MCpop_all_alfreq, file="MCpop_EU_alfreq.csv")
@@ -89,14 +111,15 @@ Genomes <- c(182,20,53,58,7,1)  # size of the populations
 MCpop_all_alfreq <- tibble::add_column(MCpop_all_alfreq, Genomes, .after = 0)
 
 MCpop_all_PIC <- polysat::PIC(MCpop_all_alfreq)
+MCpop_all_PIC
 #write.csv(MCpop_all_PIC, file="MCpop_all_PIC.csv")
 
 ```
 
+## Multi locus genotypes (MLG)
+### MLG accumulation curves --> for Supp. Fig. 2 in the manuscript
 
-#### MLG accumulation curves --> for Supp. Fig. 1 in the manuscript
-
-```{r data summary}
+```{r data summary, echo=FALSE}
 
 # Diversity
 (Locustab_MCpop_all <- locus_table(MCpop_all))
@@ -107,7 +130,7 @@ MCpop_all_PIC <- polysat::PIC(MCpop_all_alfreq)
 
 ### Rarefaction analysis of the loci - with nice plots
 # pop all
-gac_all <- genotype_curve(MCpop_all, sample = 1000, quiet = TRUE, thresh = NULL)  # do not print a hline at the max. no. of MLG possible
+gac_all <- genotype_curve(MCpop_all, sample = 1000, quiet = TRUE, thresh = NULL, plot = FALSE)  # do not print a hline at the max. no. of MLG possible
 rareP_all <- last_plot() +
   scale_y_continuous(breaks=c(0,10,20,30,38), limits=c(0,40)) +
   theme_bw() +
@@ -118,7 +141,7 @@ rareP_all <- last_plot() +
   ggtitle("A")
 
 # pop EU
-gac_EU <- genotype_curve(MCpop_EU, sample = 1000, quiet = TRUE, thresh = NULL)
+gac_EU <- genotype_curve(MCpop_EU, sample = 1000, quiet = TRUE, thresh = NULL, plot = FALSE)
 rareP_EU <- last_plot() +
 scale_y_continuous(breaks=c(31), limits=c(0,40)) +
   theme_bw() +
@@ -136,7 +159,7 @@ cowplot::plot_grid(rareP_all, rareP_EU, rel_widths = c(1,0.6))
 (info_table(MCpop_all, type = "missing", plot = FALSE))
 ```
 
-#### Multi-locus genotypes - MLGs --> for Fig 2. in the manuscript
+### MLG frequencies --> for Fig 2. in the manuscript
 
 ```{r MLGS, echo=FALSE}
 ### Multilocus Genotypes ###
@@ -186,7 +209,7 @@ ggplot(MLG.DF.long[which(MLG.DF.long$count>0),], aes(x=MLG, y=count)) +
 #ggsave("MLGs_world_170x85_300dpi.tiff", units="cm", width=17, height=11, dpi=300, compression = 'lzw')    # I save only once.
   
 ```
-
+### MLG rarefaction curve (not in the publication)
 
 ```{r MLG rarefaction curve}
 # not included in the manuscript
@@ -197,7 +220,7 @@ rarecurve(Mcpop_all_MLG, step = 1, xlab = "Sample Size", ylab = "observed MLGs",
 ```
 
 
-## Genetic diversity etc.
+## Population genetic diversity etc.
 
 ```{r genetic diversity}
 
@@ -215,24 +238,11 @@ Pop_div_overview[5,1] <- "Tot_EU"
 Pop_div_overview[8,1] <- "Tot_World"
 row.names(Pop_div_overview) <- Pop_div_overview$Pop
 Pop_div_overview <- Pop_div_overview[-1]
+Pop_div_overview
 ```
 
-## Allelic diversity (locus info)  --> Table 2 in manuscript
 
-```{r allel div}
-### Allel diversity (i.e. locus Info) 
-cc <- locus_table(MCpop_all_cloncorr, info = FALSE) # 1. Calculate diversity of the clone corrected data
-mp <- locus_table(MCpop_all, info = FALSE) # 2. Calculate diversity of the uncorrected data
-mp - cc # 3. Take the difference of step 1 from step 2.
-
-
-### Number of private allles per sub-pop
-rowSums(private_alleles(MCpop_all))
-rowSums(private_alleles(MCpop_all_cloncorr))
-rowSums(private_alleles(MCpop_EU))
-```
-
-### Index of association
+### Index of association --> for Table 4 in the manuscript
 ```{r IA}
 ### index of Association  --> part Tab. 4 in the manuscript
 set.seed(3825)
@@ -249,7 +259,7 @@ IA_US <- ia(MCpop_US, sample = 1000, plot=FALSE)
 
 IAs <- as.data.frame(rbind(IA_all, IA_EUall, IA_EUGEN, IA_EUHES, IA_EURIC, IA_EUKOB, IA_AS, IA_US))
 #write.csv(IAs, "IndexofAssociations_Subpops.csv")
-
+IAs
 ```
 
 ### Index of association (only EU): Linkage desequilibrium --> Supp. Fig. 3 
@@ -326,15 +336,52 @@ cowplot::plot_grid(g_I_noncorr, g_r_noncorr, g_I_clonecorr, g_r_clonecorr, cols 
 ```
 
 
-#### Minimum spanning network (Bruvo's distance) with MLGs
+
+## Population structure
+
+### Fixation index FST --> for Manuscript Table 5
+Using R package *StAMPP*
+```{r FST, echo=FALSE}
+
+pop_stampp <- stamppConvert(MCpop_all, type= "genlight")
+stamppFst(pop_stampp, nboots = 100, percent = 95)
+
+```
+
+
+### UPGMA clustering (Dendrogramm) based on Bruvo --> for Fig. 3
+
+```{r DENDRO, echo=FALSE}
+# First, Set up our repeat lengths of the markers
+reps <- c(FAM06=3, HEX36=4, FAM59=3, FAM15=2, HEX60=4, FAM68=3, FAM19=3, HEX32=2, FAM62=4, FAM48=2, HEX09=3, FAM70=4)
+# and get the MLGs
+pop_mlg <- read.genalex("ContMLG1_38_090120.csv", ploidy = 1, genclone=T, geo=F) # file with only the MLGs
+# Second, calculate the tree
+Mctree <- bruvo.boot(pop_mlg, replen = reps, add = TRUE, loss = TRUE, sample = 1000,
+                     tree = "upgma", showtree = FALSE, cutoff = 70, quiet = FALSE,
+                     root = NULL)
+
+# Third, draw it nicely
+library("ape")
+tiff("UPGMTree_170x220_300dpi.tiff", width = 17, height = 17, units="cm", res=300, compression="lzw")
+plot.phylo(Mctree, cex = 0.8, font = 2, adj = 0,
+           label.offset = 0.0125)
+nodelabels(Mctree$node.label, adj = c(1.3, -0.5), frame = "n", cex = 0.8,
+           font = 3, xpd = TRUE)
+axisPhylo(3)
+dev.off()
+```
+
+
+### Minimum spanning network (Bruvo's distance) with MLGs --> for Supp. Fig 5 in the manuscript
 
 Here a MSN is plotted that shows each MLG as a circle. The size of the circle is proportional to the isolates sampled having this MLG. The colors represent the populations (reddish, brownish are EU; blueish Asia and US). The greytone of the edges represent the relatedness between the MLGs: The lighter the less related (actually most of the MLGs are very close (Bruvos is really small)). I apply a cutoff of Bruvo dist = 0.5; higher distances are not displayed as an edge. -> That resulats in the cutoff of all As and US MLG, exept for one.
 
---> Bruvo, R., Michiels, N. K., D'Sousa, T. G., and Schulenberg, H. (2004) A simple method for calculation of microsatellite genotypes irrespective of ploidy level. Molecular Ecology 13, 2101-2106.
+--> Bruvo, R., Michiels, N. K., D'Sousa, T. G., and Schulenberg, H. (2004) A simple method for calculation of microsatellite genotypes irrespective of ploidy level. Molecular Ecology 13, 2101-2106.  
 
+NOTE: The final graphic was edited in Powerpoint
 
-
-```{r MSN}
+```{r MSN, echo=FALSE}
 # First, Set up our repeat lengths of the markers
 reps <- c(FAM06=3, HEX36=4, FAM59=3, FAM15=2, HEX60=4, FAM68=3, FAM19=3, HEX32=2, FAM62=4, FAM48=2, HEX09=3, FAM70=4)
 
@@ -365,7 +412,7 @@ plot_poppr_msn(MCpop_all, Mc_MSN_all,
                scale.leg = TRUE)
 
 ```
-#### Infering population structure using DAPC
+## Infering population structure using DAPC
 
 In contrast to STRUCTURE-like approaches a DAPC and k-means clusterin do not assume models of panmixie and un-linked loci, so it is more suitable for clonal organisms.
 
@@ -374,7 +421,7 @@ https://grunwaldlab.github.io/Population_Genetics_in_R/DAPC.html
 Also check this very nice tutorial:
 https://github.com/thibautjombart/adegenet/blob/master/tutorials/tutorial-dapc.pdf
 
-```{r DAPC}
+```{r DAPC cross validation, echo=FALSE}
 # First we check how many PC we retain for the discriminant analysis by doing a cross-validation test. We actaully see that with 5 PC we get the lowest variability of predicting 60% correct
 set.seed(3825)
 MC_x <- xvalDapc(tab(MCpop_all, NA.method = "mean"), pop(MCpop_all))
@@ -391,7 +438,7 @@ MC_xX[-1]
 
 ```
 
-```{r DAPC EU}
+```{r DAPC EU, echo=FALSE}
 # First we check how many PC we retain for the discriminant analysis by doing a cross-validation test. Here we see that the prediction is much less accurate than wit the world dataset: the prediction rate is as low as 0.4 and shows a large variability. The best is maybe with 14 PCs
 set.seed(3825)
 MC_EU_x <- xvalDapc(tab(MCpop_EU, NA.method = "mean"), pop(MCpop_EU))
@@ -413,7 +460,7 @@ MC_EU_xX[-1]
 
 
 
-```{r DAPC plot}
+```{r DAPC plot, echo=FALSE}
 # prep data WORLD
 DAPC_wrld <- MC_xX$DAPC
 my_wr <- as.data.frame(DAPC_wrld$ind.coord)
@@ -471,7 +518,7 @@ wowo <- cowplot::plot_grid(xx, thelegend, rel_widths = c(10,2))
 
 In the plots the color red means probability =1, white=0. The blue cross is the original membership of the isolate.
 
-```{r group member}
+```{r group member, echo=FALSE}
 # Part 1
 #tiff("DAPC_clusterP1_170x245_300dpi.tiff", width = 17, height = 24.5, units="cm", res=300, compression="lzw")
 assignplot(MC_xX$DAPC, subset=1:160, cex=0.6)
@@ -480,7 +527,7 @@ dev.off()
 # Part 2
 #tiff("DAPC_clusterP2_170x245_300dpi.jpg", width = 17, height = 24.5, units="cm", res=300, compression="lzw")
 assignplot(MC_xX$DAPC, subset=161:323, cex=0.6)
-dev.off()
+#dev.off()
 
 ```
 
